@@ -4,7 +4,7 @@
   align-items: center;
   height: 100vh;
   width: 100vw;
-  background-color: #c02b2b;
+  background-color: #ebebeb;
   overflow: hidden;
   position: relative;
 }
@@ -18,4 +18,12 @@
   background-color: rgba(0, 0, 0, 0.5);
   padding: 5px 10px;
   border-radius: 5px;
+}
+
+.end-title {
+  display: flex;
+  text-align: center;
+  width: 1000px;
+  margin-left: 0;
+  margin-right: 0;
 }
