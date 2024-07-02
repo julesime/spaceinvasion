@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useResizeDetector } from "react-resize-detector";
 import "./App.css";
+import GameOver from "./Components/GameOver.js";
 
 const App = () => {
   const { width, height, ref } = useResizeDetector();
@@ -19,32 +20,80 @@ const App = () => {
   const badgeTimeoutRef = useRef();
   const keys = useRef({});
 
-  const handleKeyDown = (e) => {
-    keys.current[e.key] = true;
-    if (gameOver && (e.key === " " || e.key === "Enter" || e.key === "r")) {
-      window.location.reload();
-    }
-  };
+  const handleKeyDown = useCallback(
+    (e) => {
+      keys.current[e.key] = true;
+      if (gameOver && (e.key === " " || e.key === "Enter" || e.key === "r")) {
+        window.location.reload();
+      }
+      if (e.key === " " && !shooting) {
+        setShooting(true);
+      }
+    },
+    [gameOver, shooting]
+  );
 
-  const handleKeyUp = (e) => {
+  const handleKeyUp = useCallback((e) => {
     keys.current[e.key] = false;
     if (e.key === " ") {
       setShooting(false);
     }
+  }, []);
+
+  const checkCollision = (a, b, radius) => {
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return Math.sqrt(dx * dx + dy * dy) < radius;
   };
 
-  const checkCollision = (laser) => {
-    const dx = laser.x - position.x;
-    const dy = laser.y - position.y;
-    return Math.sqrt(dx * dx + dy * dy) < 10;
+  const checkAsteroidCollision = (a, b) => {
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return Math.sqrt(dx * dx + dy * dy) < 30;
   };
+
+  useEffect(() => {
+    if (gameOver) return;
+    else {
+      const asteroidInterval = setInterval(generateAsteroid, 3000);
+      return () => clearInterval(asteroidInterval);
+    }
+  }, [width, height, gameOver]);
+
+  useEffect(() => {
+    if (gameOver) {
+      setAsteroids([]);
+    }
+  }, [gameOver]);
 
   const generateAsteroid = () => {
-    const x = Math.random() * (width || 300);
-    const y = Math.random() * (height || 300);
-    const direction = Math.random() * 2 * Math.PI; // Random direction
+    if (gameOver) return;
+
+    let x, y;
+    const border = Math.floor(Math.random() * 4);
+
+    // Determine which border the asteroid will appear from
+    if (border === 0) {
+      // Top border
+      x = Math.random() * (width || 300);
+      y = 0;
+    } else if (border === 1) {
+      // Right border
+      x = width || 300;
+      y = Math.random() * (height || 300);
+    } else if (border === 2) {
+      // Bottom border
+      x = Math.random() * (width || 300);
+      y = height || 300;
+    } else {
+      // Left border
+      x = 0;
+      y = Math.random() * (height || 300);
+    }
+
+    const direction = Math.random() * 2 * Math.PI;
     setAsteroids((prevAsteroids) => [...prevAsteroids, { x, y, direction }]);
-  };  
+  };
 
   const createExplosion = (x, y) => {
     const particles = Array.from({ length: 20 }, () => ({
@@ -54,21 +103,20 @@ const App = () => {
       speed: Math.random() * 2,
       opacity: 1,
     }));
-  
+
     setExplosions((prevExplosions) => [...prevExplosions, ...particles]);
-  
+
     setTimeout(() => {
       setExplosions((prevExplosions) =>
         prevExplosions.filter((particle) => particle.opacity > 0)
       );
     }, 2000);
   };
-  
 
   useEffect(() => {
     const updatePosition = () => {
       if (gameOver) return;
-  
+
       if (keys.current["ArrowUp"]) {
         setVelocity((prevVelocity) => ({
           x: prevVelocity.x + Math.sin(direction) * 0.5,
@@ -77,8 +125,8 @@ const App = () => {
       }
       if (keys.current["ArrowDown"]) {
         setVelocity((prevVelocity) => ({
-          x: prevVelocity.x - Math.sin(direction) * 0.5,
-          y: prevVelocity.y + Math.cos(direction) * 0.5,
+          x: prevVelocity.x - Math.sin(direction) * 0.2,
+          y: prevVelocity.y + Math.cos(direction) * 0.2,
         }));
       }
       if (keys.current["ArrowLeft"]) {
@@ -87,20 +135,17 @@ const App = () => {
       if (keys.current["ArrowRight"]) {
         setDirection((prevDirection) => prevDirection + 0.1);
       }
-      if (keys.current[" "]) {
-        setShooting(true);
-      }
-  
+
       setPosition((prevPosition) => ({
         x: (prevPosition.x + velocity.x + (width || 300)) % (width || 300),
         y: (prevPosition.y + velocity.y + (height || 300)) % (height || 300),
       }));
-  
+
       setVelocity((prevVelocity) => ({
         x: prevVelocity.x * 0.99,
         y: prevVelocity.y * 0.99,
       }));
-  
+
       if (shooting) {
         setLasers((prevLasers) => [
           ...prevLasers,
@@ -111,14 +156,22 @@ const App = () => {
           },
         ]);
       }
-  
+
       setLasers((prevLasers) =>
         prevLasers.map((laser) => {
-          const newX = (laser.x + Math.sin(laser.direction) * 5 + (width || 300)) % (width || 300);
-          const newY = (laser.y - Math.cos(laser.direction) * 5 + (height || 300)) % (height || 300);
-          if (shooting) {
-            setPixelsShot((prevPixelsShot) => prevPixelsShot + Math.sqrt(Math.pow(newX - laser.x, 2) + Math.pow(newY - laser.y, 2)));
-          }
+          const newX =
+            (laser.x + Math.sin(laser.direction) * 5 + (width || 300)) %
+            (width || 300);
+          const newY =
+            (laser.y - Math.cos(laser.direction) * 5 + (height || 300)) %
+            (height || 300);
+          setPixelsShot(
+            (prevPixelsShot) =>
+              prevPixelsShot +
+              Math.sqrt(
+                Math.pow(newX - laser.x, 2) + Math.pow(newY - laser.y, 2)
+              )
+          );
           return {
             ...laser,
             x: newX,
@@ -126,48 +179,111 @@ const App = () => {
           };
         })
       );
-  
-      setAsteroids((prevAsteroids) =>
-        prevAsteroids.map((asteroid) => {
-          const newX = (asteroid.x + Math.sin(asteroid.direction) * 1 + (width || 300)) % (width || 300);
-          const newY = (asteroid.y - Math.cos(asteroid.direction) * 1 + (height || 300)) % (height || 300);
+
+      setExplosions((prevExplosions) =>
+        prevExplosions.map((particle) => ({
+          ...particle,
+          x: particle.x + Math.sin(particle.direction) * particle.speed,
+          y: particle.y - Math.cos(particle.direction) * particle.speed,
+          opacity: particle.opacity - 0.01,
+        }))
+      );
+
+      setAsteroids((prevAsteroids) => {
+        const movedAsteroids = prevAsteroids.map((asteroid) => {
+          const newX =
+            (asteroid.x + Math.sin(asteroid.direction) * 1 + (width || 300)) %
+            (width || 300);
+          const newY =
+            (asteroid.y - Math.cos(asteroid.direction) * 1 + (height || 300)) %
+            (height || 300);
           return {
             ...asteroid,
             x: newX,
             y: newY,
           };
-        })
-      );
-  
-      if (asteroids.some((asteroid) => Math.sqrt(Math.pow(asteroid.x - position.x, 2) + Math.pow(asteroid.y - position.y, 2)) < 20)) {
+        });
+
+        const newAsteroids = [];
+        const destroyedAsteroids = new Set();
+        for (let i = 0; i < movedAsteroids.length; i++) {
+          for (let j = i + 1; j < movedAsteroids.length; j++) {
+            if (checkAsteroidCollision(movedAsteroids[i], movedAsteroids[j])) {
+              createExplosion(movedAsteroids[i].x, movedAsteroids[i].y);
+              createExplosion(movedAsteroids[j].x, movedAsteroids[j].y);
+              destroyedAsteroids.add(i);
+              destroyedAsteroids.add(j);
+            }
+          }
+          if (!destroyedAsteroids.has(i)) {
+            newAsteroids.push(movedAsteroids[i]);
+          }
+        }
+        return newAsteroids;
+      });
+
+      const newLasers = lasers.filter((laser) => {
+        const hitAsteroidIndex = asteroids.findIndex((asteroid) =>
+          checkCollision(laser, asteroid, 15)
+        );
+        if (hitAsteroidIndex !== -1) {
+          const hitAsteroid = asteroids[hitAsteroidIndex];
+          createExplosion(hitAsteroid.x, hitAsteroid.y);
+          setAsteroids((prevAsteroids) =>
+            prevAsteroids.filter((_, index) => index !== hitAsteroidIndex)
+          );
+          return false;
+        }
+        return true;
+      });
+
+      setLasers(newLasers);
+
+      if (
+        asteroids.some((asteroid) => checkCollision(asteroid, position, 20))
+      ) {
         setGameOver(true);
         return;
       }
-  
-      if (lasers.some(checkCollision)) {
-        setGameOver(true);
-        return;
-      }
-  
-      if (badge && position.x >= badge.x - 10 && position.x <= badge.x + 10 && position.y >= badge.y - 10 && position.y <= badge.y + 10) {
+
+      if (badge && checkCollision(position, badge, 10)) {
         setBadge(null);
         setShowCircle(true);
         setTimeout(() => setShowCircle(false), 5000);
       }
-  
+
+      setExplosions((prevExplosions) =>
+        prevExplosions.map((particle) => ({
+          ...particle,
+          x: particle.x + Math.sin(particle.direction) * particle.speed,
+          y: particle.y - Math.cos(particle.direction) * particle.speed,
+          opacity: particle.opacity - 0.01,
+        }))
+      );
+
       requestRef.current = requestAnimationFrame(updatePosition);
     };
-  
+
     requestRef.current = requestAnimationFrame(updatePosition);
     return () => cancelAnimationFrame(requestRef.current);
-  }, [velocity, width, height, position, direction, shooting, badge, lasers, gameOver, asteroids]);
-  
+  }, [
+    velocity,
+    width,
+    height,
+    position,
+    direction,
+    shooting,
+    badge,
+    lasers,
+    gameOver,
+    asteroids,
+  ]);
+
   useEffect(() => {
     const asteroidInterval = setInterval(generateAsteroid, 3000);
-  
+
     return () => clearInterval(asteroidInterval);
   }, [width, height]);
-  
 
   useEffect(() => {
     const generateBadge = () => {
@@ -192,15 +308,17 @@ const App = () => {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [badge, width, height, gameOver, handleKeyDown, handleKeyUp]);
+  }, [badge, width, height, handleKeyDown, handleKeyUp]);
 
   return (
     <div className="game-container" ref={ref}>
       <svg width={width} height={height}>
         <polygon
           points="-10,10 10,10 0,-20"
-          fill="black"
-          transform={`translate(${position.x}, ${position.y}) rotate(${(direction * 180) / Math.PI})`}
+          fill="white"
+          transform={`translate(${position.x}, ${position.y}) rotate(${
+            (direction * 180) / Math.PI
+          })`}
         />
         {lasers.map((laser, index) => (
           <line
@@ -209,38 +327,45 @@ const App = () => {
             y1={laser.y}
             x2={laser.x + Math.sin(laser.direction) * 5}
             y2={laser.y - Math.cos(laser.direction) * 5}
-            stroke="black"
-            strokeWidth="1"
+            stroke="white"
+            strokeWidth="5"
           />
         ))}
-        {badge && (
-          <circle cx={badge.x} cy={badge.y} r="10" fill="green" />
-        )}
+        {badge && <circle cx={badge.x} cy={badge.y} r="10" fill="green" />}
         {showCircle && (
           <circle
             cx={position.x}
             cy={position.y}
-            r="20"
+            r="30"
             fill="none"
             stroke="green"
             strokeWidth="2"
           />
         )}
         {asteroids.map((asteroid, index) => (
-          <circle key={index} cx={asteroid.x} cy={asteroid.y} r="15" fill="gray" />
+          <circle
+            key={index}
+            cx={asteroid.x}
+            cy={asteroid.y}
+            r="15"
+            fill="gray"
+          />
         ))}
-        {gameOver && (
-          <text x="50%" y="50%" textAnchor="middle" stroke="red" strokeWidth="2px" dy=".3em" fontSize="30">
-            GAME OVER
-          </text>
-        )}
+        {explosions.map((particle, index) => (
+          <circle
+            key={index}
+            cx={particle.x}
+            cy={particle.y}
+            r="2"
+            fill="yellow"
+            opacity={particle.opacity}
+          />
+        ))}
+        {gameOver && <GameOver />}
       </svg>
-      <div className="counter">
-        Pixels Shot: {Math.floor(pixelsShot)}
-      </div>
+      <div className="counter">Pixels Shot: {Math.floor(pixelsShot)}</div>
     </div>
   );
-  
 };
 
 export default App;
